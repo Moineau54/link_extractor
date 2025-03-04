@@ -534,8 +534,8 @@ class LinkExtractor:
             
             for domain in domains:
                 # Add http:// prefix if not present
-                if not domain.startswith(('http://', 'https://')):
-                    domain = 'http://' + domain
+                if not domain.startswith('https://'):
+                    domain = 'https://' + domain
                 
                 self.logger.info(f"Processing domain: {domain}")
                 
@@ -687,7 +687,11 @@ def main():
     # Default to URL mode with example.com if no mode specified
     if args.url:
         # URL mode - analyze a single URL
-        extractor = LinkExtractor(args.url, args.verbose)
+        url = args.url
+        if not url.startswith('https://'):
+            url = 'https://' + url
+        
+        extractor = LinkExtractor(url, args.verbose)
         extractor.run()
     elif args.file:
         # File mode - process multiple domains from a file
