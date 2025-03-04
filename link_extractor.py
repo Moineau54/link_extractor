@@ -55,6 +55,8 @@ class LinkExtractor:
         self.current_site_domain = self._extract_domain_from_url(url, url)
         self.explored_domains = []
         self.exceptions = []
+        self.ascending = False
+        self.decending = True
         
         # Initialize extractors
         self.js_extractor = JsExtractor()
@@ -489,21 +491,26 @@ class LinkExtractor:
         conn = self.db.create_connection("domains.db")
         self.db.create_table(conn)
         
-        # Consolidate all domains
+        # Consolidate all domains and filter out invalid ones
+        valid_domains = []
         for domain in self.js_domains:
-            if domain not in self.domains:
+            if domain not in self.domains and self._is_valid_domain(domain):
                 self.domains.append(domain)
                 
         for domain in self.php_domains:
-            if domain not in self.domains:
+            if domain not in self.domains and self._is_valid_domain(domain):
                 self.domains.append(domain)
         
+        # Filter the final domains list
+        valid_domains = [domain for domain in self.domains if self._is_valid_domain(domain)]
+        
         # Insert domains into database
-        for domain in self.domains:
+        for domain in valid_domains:
             self.db.insert_entry(conn, domain, 1, True, self.url, self.verbose)
         
-        # Update exceptions in database
-        for exception in self.exceptions:
+        # Update exceptions in database (only valid ones)
+        valid_exceptions = [exception for exception in self.exceptions if self._is_valid_domain(exception)]
+        for exception in valid_exceptions:
             self.db.insert_entry(conn, exception, 0, False, self.url, self.verbose)
         
         conn.close()
@@ -559,7 +566,31 @@ class LinkExtractor:
         except Exception as e:
             self.logger.error(f"Error processing domains from file: {str(e)}")
             return []
+    
+    def _is_valid_domain(self, domain):
+        """
+        Check if a domain string is valid and non-empty.
+        
+        Args:
+            domain (str): The domain to check
+        
+        Returns:
+            bool: True if the domain is valid, False otherwise
+        """
+        if not domain or len(domain.strip()) == 0:
+            return False
+        
+        # Basic domain validation - must have at least one dot and valid characters
+        if '.' not in domain:
+            return False
             
+        # Check for valid domain characters (letters, numbers, hyphen, dot)
+        valid_chars = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-.')
+        if not all(char in valid_chars for char in domain):
+            return False
+        
+        return True
+
     def output_domains_by_occurrences(self, ascending=True):
         """
         Output domains sorted by their occurrences in the database.
@@ -573,34 +604,29 @@ class LinkExtractor:
             return
             
         try:
-            c = conn.cursor()
-            order = "ASC" if ascending else "DESC"
-            c.execute(f"SELECT domain, occurrences, is_tracker, origin FROM domains ORDER BY occurrences {order}")
-            rows = c.fetchall()
+            ascending = self.ascending
+            descending = self.decending
+            if ascending:
+                self.logger.info("Sorting domains in ascending order")
+            elif descending:
+                self.logger.info("Sorting domains in descending order")
+            else:
+                self.logger.info("Sorting domains in ascending order")
+                ascending = True
+            self.logger.info("Retrieving domains from the database")
+            # domains = self.db.get_domains(conn)
+            # if not domains:
+            #     self.logger.info("No domains found in the database")
+            #     return
             
-            if not rows:
-                self.logger.info("No domains found in the database")
-                return
-                
-            # Print header
-            self.logger.info(f"{'Domain':<40} | {'Occurrences':<12} | {'Tracker':<8} | {'Origin':<30}")
-            self.logger.info('-' * 95)
-            
-            # Print rows
-            for row in rows:
-                domain, occurrences, is_tracker, origin = row
-                
-                # Format origin to fit
-                origin_str = str(origin or "")
-                if len(origin_str) > 30:
-                    origin_str = origin_str[:27] + "..."
-                    
-                self.logger.info(
-                    f"{domain:<40} | {occurrences:<12} | {'Yes' if is_tracker else 'No':<8} | {origin_str:<30}"
-                )
-                
-            self.logger.info(f"\nTotal domains: {len(rows)}")
-            
+            self.db.display_domains_table(
+                conn, 
+                limit=None, 
+                min_occurrences=2, 
+                trackers_only=True, 
+                ascending=ascending, 
+                descending=descending
+            )
         except Exception as e:
             self.logger.error(f"Error retrieving domains: {str(e)}")
         finally:
