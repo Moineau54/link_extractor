@@ -19,7 +19,7 @@ setup(
     description="A tool for extracting possible tracking domains from websites",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/link-extractor",
+    url="https://github.com/Moineau54/link_extractor",
     packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
