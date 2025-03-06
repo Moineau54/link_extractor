@@ -55,8 +55,6 @@ class LinkExtractor:
         self.current_site_domain = self._extract_domain_from_url(url, url)
         self.explored_domains = []
         self.exceptions = []
-        self.ascending = False
-        self.decending = True
         
         # Initialize extractors
         self.js_extractor = JsExtractor()
@@ -566,6 +564,7 @@ class LinkExtractor:
         except Exception as e:
             self.logger.error(f"Error processing domains from file: {str(e)}")
             return []
+            
     
     def _is_valid_domain(self, domain):
         """
@@ -591,6 +590,7 @@ class LinkExtractor:
         
         return True
 
+    
     def output_domains_by_occurrences(self, ascending=True):
         """
         Output domains sorted by their occurrences in the database.
@@ -604,29 +604,34 @@ class LinkExtractor:
             return
             
         try:
-            ascending = self.ascending
-            descending = self.decending
-            if ascending:
-                self.logger.info("Sorting domains in ascending order")
-            elif descending:
-                self.logger.info("Sorting domains in descending order")
-            else:
-                self.logger.info("Sorting domains in ascending order")
-                ascending = True
-            self.logger.info("Retrieving domains from the database")
-            # domains = self.db.get_domains(conn)
-            # if not domains:
-            #     self.logger.info("No domains found in the database")
-            #     return
+            c = conn.cursor()
+            order = "ASC" if ascending else "DESC"
+            c.execute(f"SELECT domain, occurrences, is_tracker, origin FROM domains ORDER BY occurrences {order}")
+            rows = c.fetchall()
             
-            self.db.display_domains_table(
-                conn, 
-                limit=None, 
-                min_occurrences=2, 
-                trackers_only=True, 
-                ascending=ascending, 
-                descending=descending
-            )
+            if not rows:
+                self.logger.info("No domains found in the database")
+                return
+                
+            # Print header
+            self.logger.info(f"{'Domain':<40} | {'Occurrences':<12} | {'Tracker':<8} | {'Origin':<30}")
+            self.logger.info('-' * 95)
+            
+            # Print rows
+            for row in rows:
+                domain, occurrences, is_tracker, origin = row
+                
+                # Format origin to fit
+                origin_str = str(origin or "")
+                if len(origin_str) > 30:
+                    origin_str = origin_str[:27] + "..."
+                    
+                self.logger.info(
+                    f"{domain:<40} | {occurrences:<12} | {'Yes' if is_tracker else 'No':<8} | {origin_str:<30}"
+                )
+                
+            self.logger.info(f"\nTotal domains: {len(rows)}")
+            
         except Exception as e:
             self.logger.error(f"Error retrieving domains: {str(e)}")
         finally:
@@ -727,8 +732,29 @@ def main():
     elif args.list:
         # List mode - show domains from database
         extractor = LinkExtractor("", args.verbose)  # Empty URL as we're just querying
-        ascending = not args.desc  # Default to ascending unless --desc specified
-        extractor.output_domains_by_occurrences(ascending=ascending)
+        
+        # Create database connection
+        conn = extractor.db.create_connection("domains.db")
+        if not conn:
+            extractor.logger.error("Could not connect to database")
+            return
+            
+        # Set default sorting based on command line arguments
+        ascending = args.asc
+        descending = not args.asc  # Default to descending unless --asc specified
+        
+        # Call display_domains_table directly with appropriate parameters
+        extractor.db.display_domains_table(
+            conn,
+            limit=None,
+            min_occurrences=2,
+            trackers_only=True,
+            ascending=ascending,
+            descending=descending
+        )
+        
+        # Close the connection
+        conn.close()
 
 
 if __name__ == "__main__":
