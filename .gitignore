@@ -6,4 +6,4 @@ extractors/__pycache__/*
 utils/__pycache__/*
 explored_domains.txt
 exceptions.txt
-
+logs/*

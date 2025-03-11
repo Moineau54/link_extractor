@@ -140,6 +140,12 @@ class Database:
             url (str): The URL where the domain was found
             verbose (bool): Whether to print verbose output
         """
+        # Validate the domain - skip empty entries
+        if not domain or len(domain.strip()) == 0:
+            if verbose or self.verbose:
+                self.logger.warning(f"Skipping empty domain")
+            return
+        
         # Read exceptions file once and store the domains
         try:
             with open("exceptions.txt", "r") as f:
@@ -227,24 +233,42 @@ class Database:
             self.logger.info(f"Retrieved {len(rows)} rows from the 'domains' table")
         return rows
     
-    def display_domains_table(self, conn, limit=None):
+    def display_domains_table(self, conn, limit=None, min_occurrences=2, trackers_only=True, ascending=False, descending=True):
         """
         Display the domains table in a formatted way.
         
         Args:
             conn (sqlite3.Connection): Database connection object
             limit (int, optional): Limit the number of rows to display
+            min_occurrences (int, optional): Minimum number of occurrences to display
+            trackers_only (bool, optional): Whether to show only tracker domains
+            ascending (bool, optional): Sort in ascending order
+            descending (bool, optional): Sort in descending order
         """
         c = conn.cursor()
-        if limit:
-            c.execute("SELECT * FROM domains ORDER BY occurrences DESC LIMIT ?", (limit,))
+        
+        query = "SELECT * FROM domains WHERE occurrences >= ?"
+        params = [min_occurrences]
+        
+        if trackers_only:
+            query += " AND is_tracker > 0"
+        
+        if ascending:
+            query += " ORDER BY occurrences ASC"
+        elif descending:
+            query += " ORDER BY occurrences DESC"
         else:
-            c.execute("SELECT * FROM domains ORDER BY occurrences DESC")
-            
+            query += " ORDER BY domain ASC"
+        
+        if limit:
+            query += " LIMIT ?"
+            params.append(limit)
+        
+        c.execute(query, tuple(params))
         rows = c.fetchall()
         
         if not rows:
-            self.logger.info("No domains found in the database")
+            print("No domains found matching the criteria")
             return
             
         # Calculate max lengths for each column for better formatting
@@ -256,12 +280,12 @@ class Database:
         
         # Print header
         header = (f"{'ID':<{id_len}} | {'Domain':<{domain_len}} | {'Count':<{occurrences_len}} | "
-                 f"{'Tracker':<{tracker_len}} | {'Origin':<{origin_len}}")
-        self.logger.info(header)
+                f"{'Tracker':<{tracker_len}} | {'Origin':<{origin_len}}")
+        print(header)
         
         # Print separator
         separator = '-' * (id_len + domain_len + occurrences_len + tracker_len + origin_len + 8)
-        self.logger.info(separator)
+        print(separator)
         
         # Print rows
         for row in rows:
@@ -270,9 +294,9 @@ class Database:
             if len(origin) > origin_len:
                 origin = origin[:origin_len-3] + "..."
                 
-            self.logger.info(
+            print(
                 f"{row[0]:<{id_len}} | {row[1]:<{domain_len}} | {row[2]:<{occurrences_len}} | "
                 f"{'Yes' if row[3] else 'No':<{tracker_len}} | {origin:<{origin_len}}"
             )
             
-        self.logger.info(f"Total domains: {len(rows)}")
+        print(f"Total domains: {len(rows)}")

@@ -489,21 +489,26 @@ class LinkExtractor:
         conn = self.db.create_connection("domains.db")
         self.db.create_table(conn)
         
-        # Consolidate all domains
+        # Consolidate all domains and filter out invalid ones
+        valid_domains = []
         for domain in self.js_domains:
-            if domain not in self.domains:
+            if domain not in self.domains and self._is_valid_domain(domain):
                 self.domains.append(domain)
                 
         for domain in self.php_domains:
-            if domain not in self.domains:
+            if domain not in self.domains and self._is_valid_domain(domain):
                 self.domains.append(domain)
         
+        # Filter the final domains list
+        valid_domains = [domain for domain in self.domains if self._is_valid_domain(domain)]
+        
         # Insert domains into database
-        for domain in self.domains:
+        for domain in valid_domains:
             self.db.insert_entry(conn, domain, 1, True, self.url, self.verbose)
         
-        # Update exceptions in database
-        for exception in self.exceptions:
+        # Update exceptions in database (only valid ones)
+        valid_exceptions = [exception for exception in self.exceptions if self._is_valid_domain(exception)]
+        for exception in valid_exceptions:
             self.db.insert_entry(conn, exception, 0, False, self.url, self.verbose)
         
         conn.close()
@@ -560,6 +565,32 @@ class LinkExtractor:
             self.logger.error(f"Error processing domains from file: {str(e)}")
             return []
             
+    
+    def _is_valid_domain(self, domain):
+        """
+        Check if a domain string is valid and non-empty.
+        
+        Args:
+            domain (str): The domain to check
+        
+        Returns:
+            bool: True if the domain is valid, False otherwise
+        """
+        if not domain or len(domain.strip()) == 0:
+            return False
+        
+        # Basic domain validation - must have at least one dot and valid characters
+        if '.' not in domain:
+            return False
+            
+        # Check for valid domain characters (letters, numbers, hyphen, dot)
+        valid_chars = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-.')
+        if not all(char in valid_chars for char in domain):
+            return False
+        
+        return True
+
+    
     def output_domains_by_occurrences(self, ascending=True):
         """
         Output domains sorted by their occurrences in the database.
@@ -701,8 +732,29 @@ def main():
     elif args.list:
         # List mode - show domains from database
         extractor = LinkExtractor("", args.verbose)  # Empty URL as we're just querying
-        ascending = not args.desc  # Default to ascending unless --desc specified
-        extractor.output_domains_by_occurrences(ascending=ascending)
+        
+        # Create database connection
+        conn = extractor.db.create_connection("domains.db")
+        if not conn:
+            extractor.logger.error("Could not connect to database")
+            return
+            
+        # Set default sorting based on command line arguments
+        ascending = args.asc
+        descending = not args.asc  # Default to descending unless --asc specified
+        
+        # Call display_domains_table directly with appropriate parameters
+        extractor.db.display_domains_table(
+            conn,
+            limit=None,
+            min_occurrences=2,
+            trackers_only=True,
+            ascending=ascending,
+            descending=descending
+        )
+        
+        # Close the connection
+        conn.close()
 
 
 if __name__ == "__main__":
