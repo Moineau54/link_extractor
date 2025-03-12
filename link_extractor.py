@@ -489,6 +489,17 @@ class LinkExtractor:
         conn = self.db.create_connection("domains.db")
         self.db.create_table(conn)
         
+        # Clean up any empty domain entries in the database
+        c = conn.cursor()
+        c.execute("DELETE FROM domains WHERE domain = '' OR domain IS NULL")
+        if c.rowcount > 0:
+            self.logger.info(f"Cleaned up {c.rowcount} empty domain entries from database")
+        conn.commit()
+        
+        self.logger.info("Saving the domains to the database")
+        conn = self.db.create_connection("domains.db")
+        self.db.create_table(conn)
+        
         # Consolidate all domains and filter out invalid ones
         valid_domains = []
         for domain in self.js_domains:
