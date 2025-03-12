@@ -671,7 +671,8 @@ class LinkExtractor:
             # Display results
             self.logger.info(f"Total unique domains found: {len(self.domains)}")
             for domain in self.domains:
-                self.logger.info(f"Found domain: {domain}")
+                if domain != '':
+                    self.logger.info(f"Found domain: {domain}")
             
             self.logger.info("All done!")
         except Exception as e:
