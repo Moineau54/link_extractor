@@ -69,6 +69,7 @@ Arguments:
 - `-v, --verbose` - Display detailed output including all scripts found
 - `--asc` - Sort domains in ascending order (used with --list)
 - `--desc` - Sort domains in descending order (used with --list)
+- `--with-head, -wh` - Lets the script open a browser window instead of running headless
 - `-h, --help` - Display usage information
 
 ## Configuration
@@ -106,6 +107,9 @@ link-extractor/
     └── database.py          # Database operations
 ```
 
+## Warning
+
+Running selenium can be a little bit taxing on your system depending on the hardware you run it on.
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE file](license.md) for details.
