@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Link Extractor - A tool for extracting domains from websites
 
@@ -16,7 +15,15 @@ Arguments:
     -h, --help    - Display usage information
 """
 
-import requests
+# Selenium
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.wait import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.firefox.options import Options
+# import undetected_chromedriver as uc
+from undetected_geckodriver import Firefox as U_Firefox
+
 from bs4 import BeautifulSoup
 import sys
 import os
@@ -92,7 +99,8 @@ class LinkExtractor:
         if not os.path.exists("explored_domains.txt"):
             with open("explored_domains.txt", "w") as f:
                 f.write(f"https://www.example.com/ {time.strftime('%d.%m.%Y')}\n")
-            self.logger.info("Created new explored_domains.txt file")
+            self.logger.debug("Created new explored_domains.txt file")
+            print("Created new explored_domains.txt file")
         
         with open("explored_domains.txt", "r") as f:
             self.explored_domains = [line.strip() for line in f.readlines() if line.strip()]
@@ -103,7 +111,8 @@ class LinkExtractor:
         if not os.path.exists("exceptions.txt"):
             with open("exceptions.txt", "w") as f:
                 f.write("example.com\n")
-            self.logger.info("Created new exceptions.txt file")
+            self.logger.debug("Created new exceptions.txt file")
+            print("Created new exceptions.txt file")
         
         with open("exceptions.txt", "r") as f:
             self.exceptions = [line.strip() for line in f.readlines() if line.strip()]
@@ -130,7 +139,8 @@ class LinkExtractor:
             
             if domain_url == self.url:
                 if domain_date == current_date:
-                    self.logger.info(f"{self.url} has already been explored today. Exiting...")
+                    self.logger.debug(f"{self.url} has already been explored today. Exiting...")
+                    print(f"{self.url} has already been explored today. Exiting...")
                     return False
                 else:
                     # Try to calculate days difference
@@ -143,14 +153,17 @@ class LinkExtractor:
                         if (domain_year < current_year or 
                             (domain_year == current_year and domain_month < current_month - 1) or
                             (domain_year == current_year and domain_month == current_month - 1 and domain_day < current_day)):
-                            self.logger.info(f"{self.url} has not been explored in the last 30 days. Re-exploring...")
+                            self.logger.debug(f"{self.url} has not been explored in the last 30 days. Re-exploring...")
+                            print(f"{self.url} has not been explored in the last 30 days. Re-exploring...")
                             return True
                         else:
-                            self.logger.info(f"{self.url} has been explored within the last 30 days. Exiting...")
+                            self.logger.debug(f"{self.url} has been explored within the last 30 days. Exiting...")
+                            print(f"{self.url} has been explored within the last 30 days. Exiting...")
                             return False
                     except ValueError:
                         # If date parsing fails, re-explore to be safe
-                        self.logger.info("Couldn't determine exploration age. Re-exploring...")
+                        self.logger.debug("Couldn't determine exploration age. Re-exploring...")
+                        print("Couldn't determine exploration age. Re-exploring...")
                         return True
         
         # If URL not found in explored_domains, explore it
@@ -216,33 +229,42 @@ class LinkExtractor:
         Returns:
             BeautifulSoup: The parsed HTML content or None on error
         """
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
-            'Cache-Control': 'max-age=0',
-        }
+        print("running undetected geckodriver (selenium)")
+        # driver = uc.Chrome(headless=False,use_subprocess=False)
+        options = Options()
+        options.add_argument("--headless")
+        driver = U_Firefox(options=options)
+        self.logger.debug(f"Fetching URL: {self.url}")
+        print(f"Fetching URL: {self.url}")
+        url = self.url
+        driver.get(url)
         
         try:
-            self.logger.info(f"Fetching URL: {self.url}")
-            response = requests.get(self.url, headers=headers)
-            response.raise_for_status()
-            
-            if response.status_code == 200:
-                self.logger.info("URL fetched successfully!")
-                return BeautifulSoup(response.text, "html.parser")
+            self.logger.debug("loading the page (20s)")
+            print("loading the page (20s)")
+            # driver.implicitly_wait(20)
+            element = WebDriverWait(driver, 20)
+        finally:
+            if driver.title != None:
+                try:
+                    content = driver.page_source
+                except EC.Alert as a:
+                    print(a)
+                    return None
+                driver.close()
+                return BeautifulSoup(content, "lxml")
             else:
-                self.logger.error(f"Failed to fetch the URL: {response.status_code}")
                 return None
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Error fetching URL: {e}")
-            return None
+            
+        #     if response.status_code == 200:
+        #         self.logger.info("URL fetched successfully!")
+        #         return BeautifulSoup(response.text, "html.parser")
+        #     else:
+        #         self.logger.error(f"Failed to fetch the URL: {response.status_code}")
+        #         return None
+        # except requests.exceptions.RequestException as e:
+        #     self.logger.error(f"Error fetching URL: {e}")
+        #     return None
     
     def _extract_js_links(self, soup):
         """
@@ -302,7 +324,9 @@ class LinkExtractor:
         
         # Remove duplicates
         js_links = list(set(js_links))
-        self.logger.info(f"Found {len(js_links)} JavaScript files in the webpage")
+        self.logger.debug(f"Found {len(js_links)} JavaScript files in the webpage")
+        if js_links:
+            print(f"Found {len(js_links)} JavaScript files in the webpage")
         
         return js_links
     
@@ -314,7 +338,8 @@ class LinkExtractor:
             js_links (list): List of JavaScript links to analyze
         """
         for js_link in js_links:
-            self.logger.info(f"Analyzing JavaScript file: {js_link}")
+            self.logger.debug(f"Analyzing JavaScript file: {js_link}")
+            
             
             # Extract domain from the js_link itself
             js_link_domain = self._extract_domain_from_url(js_link, self.url)
@@ -381,7 +406,8 @@ class LinkExtractor:
         
         # Remove duplicates
         php_links = list(set(php_links))
-        self.logger.info(f"Found {len(php_links)} PHP files in the webpage")
+        self.logger.debug(f"Found {len(php_links)} PHP files in the webpage")
+        print(f"Found {len(php_links)} PHP files in the webpage")
         
         return php_links
     
@@ -396,7 +422,8 @@ class LinkExtractor:
             return
             
         for php_link in php_links:
-            self.logger.info(f"Analyzing PHP file: {php_link}")
+            self.logger.debug(f"Analyzing PHP file: {php_link}")
+            
             
             # Extract domain from the PHP link itself
             php_link_domain = self._extract_domain_from_url(php_link, self.url)
@@ -451,11 +478,16 @@ class LinkExtractor:
         Args:
             soup (BeautifulSoup): The parsed HTML
         """
-        self.logger.info("Checking for domains in noscript tags")
+        self.logger.debug("Checking for noscript tags")
+        
         noscript = soup.find_all("noscript")
         no_script_domains = []
         
         if noscript:
+            self.logger.debug("Checking for domains in noscript tags")
+            
+            
+            
             for ns in noscript:
                 # Find iframes within noscript tags
                 iframes = ns.find_all("iframe")
@@ -477,7 +509,8 @@ class LinkExtractor:
                             no_script_domains.append(domain)
                             self.logger.debug(f"Found domain in noscript img: {domain}")
         
-        self.logger.info(f"Found {len(no_script_domains)} domains in the noscript tags")
+        self.logger.debug(f"Found {len(no_script_domains)} domains in the noscript tags")
+        print(f"Found {len(no_script_domains)} domains in the noscript tags")
         
         for domain in no_script_domains:
             if domain not in self.domains:
@@ -485,7 +518,9 @@ class LinkExtractor:
     
     def _save_domains_to_database(self):
         """Save the extracted domains to the database."""
-        self.logger.info("Saving the domains to the database")
+        self.logger.debug("Saving the domains to the database")
+        print("Saving the domains to the database")
+
         conn = self.db.create_connection("domains.db")
         self.db.create_table(conn)
         
@@ -493,10 +528,13 @@ class LinkExtractor:
         c = conn.cursor()
         c.execute("DELETE FROM domains WHERE domain = '' OR domain IS NULL")
         if c.rowcount > 0:
-            self.logger.info(f"Cleaned up {c.rowcount} empty domain entries from database")
+            self.logger.debug(f"Cleaned up {c.rowcount} empty domain entries from database")
+            
         conn.commit()
         
-        self.logger.info("Saving the domains to the database")
+        self.logger.debug("Saving the changes to database")
+        
+        
         conn = self.db.create_connection("domains.db")
         self.db.create_table(conn)
         
@@ -546,14 +584,16 @@ class LinkExtractor:
             with open(filename, 'r') as f:
                 domains = [line.strip() for line in f if line.strip() and not line.startswith('#')]
                 
-            self.logger.info(f"Read {len(domains)} domains from {filename}")
+            self.logger.debug(f"Read {len(domains)} domains from {filename}")
+            
             
             for domain in domains:
                 # Add http:// prefix if not present
                 if not domain.startswith('https://'):
                     domain = 'https://' + domain
                 
-                self.logger.info(f"Processing domain: {domain}")
+                self.logger.debug(f"Processing domain: {domain}")
+                
                 
                 # Create a new extractor instance for this domain
                 extractor = LinkExtractor(domain, self.verbose)
@@ -569,7 +609,8 @@ class LinkExtractor:
                 }
                 
                 results.append(result)
-                self.logger.info(f"Completed processing {domain}")
+                self.logger.debug(f"Completed processing {domain}")
+                print(f"Completed processing {domain}")
             
             return results
         except Exception as e:
@@ -621,12 +662,15 @@ class LinkExtractor:
             rows = c.fetchall()
             
             if not rows:
-                self.logger.info("No domains found in the database")
+                self.logger.debug("No domains found in the database")
+                print("No domains found in the database")
                 return
                 
             # Print header
-            self.logger.info(f"{'Domain':<40} | {'Occurrences':<12} | {'Tracker':<8} | {'Origin':<30}")
-            self.logger.info('-' * 95)
+            self.logger.debug(f"{'Domain':<40} | {'Occurrences':<12} | {'Tracker':<8} | {'Origin':<30}")
+            print(f"{'Domain':<40} | {'Occurrences':<12} | {'Tracker':<8} | {'Origin':<30}")
+            self.logger.debug('-' * 95)
+            print('-' * 95)
             
             # Print rows
             for row in rows:
@@ -637,11 +681,11 @@ class LinkExtractor:
                 if len(origin_str) > 30:
                     origin_str = origin_str[:27] + "..."
                     
-                self.logger.info(
-                    f"{domain:<40} | {occurrences:<12} | {'Yes' if is_tracker else 'No':<8} | {origin_str:<30}"
-                )
+                self.logger.debug(f"{domain:<40} | {occurrences:<12} | {'Yes' if is_tracker else 'No':<8} | {origin_str:<30}")
+                print(f"{domain:<40} | {occurrences:<12} | {'Yes' if is_tracker else 'No':<8} | {origin_str:<30}")
                 
-            self.logger.info(f"\nTotal domains: {len(rows)}")
+            self.logger.debug(f"\nTotal domains: {len(rows)}")
+            print(f"\nTotal domains: {len(rows)}")
             
         except Exception as e:
             self.logger.error(f"Error retrieving domains: {str(e)}")
@@ -680,12 +724,19 @@ class LinkExtractor:
             self._update_explored_domains()
             
             # Display results
-            self.logger.info(f"Total unique domains found: {len(self.domains)}")
+            if "" in self.domains:
+                self.domains.remove("")
+            
+            self.logger.debug(f"Total unique domains found: {len(self.domains)}")
+            print(f"Total unique domains found: {len(self.domains)}")
             for domain in self.domains:
                 if domain != '':
-                    self.logger.info(f"Found domain: {domain}")
+                    self.logger.debug(f"Found domain: {domain}")
+                    print(f"Found domain: {domain}")
             
-            self.logger.info("All done!")
+            self.logger.debug("All done!")
+            print("All done!")
+            sys.exit()
         except Exception as e:
             self.logger.error(f"Error: {str(e)}")
 
