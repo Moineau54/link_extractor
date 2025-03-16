@@ -44,7 +44,7 @@ from utils.console import ConsoleHelper
 class LinkExtractor:
     """Main class for extracting links and domains from web pages."""
     
-    def __init__(self, url, verbose=False):
+    def __init__(self, url, verbose=False, with_head=False):
         """
         Initialize the LinkExtractor.
         
@@ -53,6 +53,7 @@ class LinkExtractor:
             verbose (bool): Whether to display verbose output
         """
         self.url = url
+        self.with_head = with_head
         self.verbose = verbose
         self.logger = self._setup_logger()
         self.console = ConsoleHelper(verbose)
@@ -232,7 +233,8 @@ class LinkExtractor:
         print("running undetected geckodriver (selenium)")
         # driver = uc.Chrome(headless=False,use_subprocess=False)
         options = Options()
-        options.add_argument("--headless")
+        if self.with_head == False:
+            options.add_argument("--headless")
         driver = U_Firefox(options=options)
         self.logger.debug(f"Fetching URL: {self.url}")
         print(f"Fetching URL: {self.url}")
@@ -596,7 +598,7 @@ class LinkExtractor:
                 
                 
                 # Create a new extractor instance for this domain
-                extractor = LinkExtractor(domain, self.verbose)
+                extractor = LinkExtractor(domain, self.verbose, self.with_head)
                 extractor.run()
                 
                 # Get results
@@ -757,6 +759,7 @@ def parse_arguments():
     mode_group.add_argument("--list", "-l", action="store_true", help="List all domains in the database")
     
     # Other arguments
+    parser.add_argument("--with-head", "-wh", action="store_true", help="Runs the script with browser head (opens a browser window)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Display detailed output")
     parser.add_argument("--asc", action="store_true", help="Sort domains in ascending order (used with --list)")
     parser.add_argument("--desc", action="store_true", help="Sort domains in descending order (used with --list)")
@@ -766,7 +769,9 @@ def parse_arguments():
     # Default to example URL if no mode specified
     if not (args.url or args.file or args.list):
         args.url = "https://www.example.com/"
-        
+    
+    if not (args.with_head):
+        args.with_head = False
     # Handle conflicting sort options
     if args.asc and args.desc:
         parser.error("Cannot specify both --asc and --desc")
@@ -785,16 +790,16 @@ def main():
         if not url.startswith('https://'):
             url = 'https://' + url
         
-        extractor = LinkExtractor(url, args.verbose)
+        extractor = LinkExtractor(url, args.verbose, args.with_head)
         extractor.run()
     elif args.file:
         # File mode - process multiple domains from a file
-        extractor = LinkExtractor("", args.verbose)  # Empty URL as it will be overridden
+        extractor = LinkExtractor("", args.verbose, args.with_head)  # Empty URL as it will be overridden
         results = extractor.process_domains_from_file(args.file)
         print(f"\nProcessed {len(results)} domains from {args.file}")
     elif args.list:
         # List mode - show domains from database
-        extractor = LinkExtractor("", args.verbose)  # Empty URL as we're just querying
+        extractor = LinkExtractor("", args.verbose, args.with_head)  # Empty URL as we're just querying
         
         # Create database connection
         conn = extractor.db.create_connection("domains.db")
