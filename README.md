@@ -76,7 +76,7 @@ Arguments:
 
 The tool uses two configuration files:
 - `exceptions.txt` - List of domains to ignore (one domain per line)
-- `explored_domains.txt` - List of already explored domains with dates
+- `explored_urls.txt` - List of already explored domains with dates
 
 ## Database
 

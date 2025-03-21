@@ -1,3 +1,4 @@
+#!.venv/bin/python
 """
 Link Extractor - A tool for extracting domains from websites
 
@@ -25,6 +26,7 @@ from selenium.webdriver.firefox.options import Options
 from undetected_geckodriver import Firefox as U_Firefox
 
 from bs4 import BeautifulSoup
+import subprocess
 import sys
 import os
 import shutil
@@ -40,6 +42,11 @@ from extractors.php_extractor import PhpExtractor
 from utils.database import Database
 from utils.console import ConsoleHelper
 
+# rich console
+from rich.console import Console
+from rich.padding import Padding
+
+console = Console()
 
 class LinkExtractor:
     """Main class for extracting links and domains from web pages."""
@@ -97,13 +104,13 @@ class LinkExtractor:
     
     def _load_explored_domains(self):
         """Load the list of already explored domains."""
-        if not os.path.exists("explored_domains.txt"):
-            with open("explored_domains.txt", "w") as f:
+        if not os.path.exists("explored_url.txt"):
+            with open("explored_url.txt", "w") as f:
                 f.write(f"https://www.example.com/ {time.strftime('%d.%m.%Y')}\n")
-            self.logger.debug("Created new explored_domains.txt file")
-            print("Created new explored_domains.txt file")
+            self.logger.debug("Created new explored_url.txt file")
+            print("Created new explored_url.txt file")
         
-        with open("explored_domains.txt", "r") as f:
+        with open("explored_url.txt", "r") as f:
             self.explored_domains = [line.strip() for line in f.readlines() if line.strip()]
             self.logger.debug(f"Loaded {len(self.explored_domains)} explored domains")
     
@@ -566,7 +573,7 @@ class LinkExtractor:
     
     def _update_explored_domains(self):
         """Update the list of explored domains."""
-        with open("explored_domains.txt", "a") as f:
+        with open("explored_url.txt", "a") as f:
             f.write(f"{self.url} {time.strftime('%d.%m.%Y')}\n")
         self.logger.debug(f"Added {self.url} to explored domains")
         
@@ -778,6 +785,60 @@ def parse_arguments():
         
     return args
 
+def get_update():
+    """Checks for updates from GitHub and asks for confirmation before applying."""
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    python_executable = sys.executable
+    script_path = os.path.abspath(__file__)
+
+    try:
+        # Return changes from remote without applying them yet
+        subprocess.run(
+            ["git", "-C", repo_dir, "fetch", "origin", "main"],
+            capture_output=True, text=True
+        )
+
+        # Check if updates are available
+        diff_result = subprocess.run(
+            ["git", "-C", repo_dir, "diff", "HEAD..origin/main"],
+            capture_output=True, text=True
+        )
+
+        if not diff_result.stdout:
+            console.print("")
+            console.print(Padding("[bold green]→ No updates found. Running the script normally...[/bold green]", (0, 0, 0, 4)))
+            return
+
+        # Show changes before updating
+        console.print("")
+        console.print(Padding("[bold yellow]→ Updates are available! Here are the changes:[/bold yellow]", (0, 0, 0, 4)))
+        console.print(Padding(diff_result.stdout, (0, 0, 0, 4)))
+
+        # Confirm first
+        user_input = input("\n[?] Apply these updates? (y/n): ").strip().lower()
+        if user_input != "y":
+            console.print("")
+            console.print(Padding("[bold cyan]→ Update skipped. Running the current version.[/bold cyan]", (0, 0, 0, 4)))
+            return
+
+        # Apply the update
+        update_result = subprocess.run(
+            ["git", "-C", repo_dir, "pull", "origin", "main"],
+            capture_output=True, text=True
+        )
+
+        console.print("")
+        console.print(Padding("[bold yellow]→ Update applied! Restarting script in 3 seconds...[/bold yellow]", (0, 0, 0, 4)))
+        time.sleep(3)
+
+        # Restart the script
+        subprocess.Popen([python_executable, script_path] + sys.argv[1:])
+        sys.exit(0)
+
+    except Exception as e:
+        console.print("")
+        console.print(Padding(f"[bold red]→ Couldn't update from GitHub. Error: {e}[/bold red]", (0, 0, 0, 4)))
+
 
 def main():
     """Script entry point."""
@@ -826,4 +887,5 @@ def main():
 
 
 if __name__ == "__main__":
+    get_update()
     main()
