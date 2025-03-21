@@ -28,6 +28,11 @@ Link Extractor is a Python tool that scrapes a specified webpage, extracts scrip
    pip install -r requirements.txt
    ```
 
+3. Make the script an executable (linux)
+```
+chmod +x link_extractor.py
+```
+
 ## Usage
 
 ### Analyzing a Single URL
