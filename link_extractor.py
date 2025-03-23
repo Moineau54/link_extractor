@@ -22,6 +22,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.firefox.options import Options
+from selenium.common.exceptions import UnexpectedAlertPresentException, TimeoutException, WebDriverException
 # import undetected_chromedriver as uc
 from undetected_geckodriver import Firefox as U_Firefox
 
@@ -230,50 +231,184 @@ class LinkExtractor:
                 # If all else fails, return the original URL
                 return url
     
+    def fetch_with_retry(self, max_retries=3, backoff_factor=1.5):
+        """
+        Attempt to fetch the webpage with retries.
+        
+        Args:
+            max_retries (int): Maximum number of retry attempts
+            backoff_factor (float): Multiplier for exponential backoff between retries
+            
+        Returns:
+            BeautifulSoup: The parsed HTML content or None if all retries fail
+        """
+        import time
+        
+        retry_count = 0
+        last_error = None
+        
+        # Save original URL
+        original_url = self.url
+        
+        # Try different URL variations
+        url_variations = [
+            original_url,  # First try the original URL
+            original_url.replace('https://', 'http://'),  # Try HTTP if HTTPS fails
+        ]
+        
+        # Add www. prefix if it's not already there
+        if '://' in original_url and '://www.' not in original_url:
+            domain_part = original_url.split('://', 1)[1]
+            url_with_www = original_url.split('://', 1)[0] + '://www.' + domain_part
+            url_variations.append(url_with_www)
+        
+        # Try all URL variations with retries
+        for url_variation in url_variations:
+            self.url = url_variation
+            
+            for attempt in range(max_retries):
+                retry_count += 1
+                
+                self.logger.debug(f"Attempt {retry_count} with URL: {self.url}")
+                print(f"Attempt {retry_count} with URL: {self.url}")
+                
+                # Attempt to fetch the webpage
+                result = self._fetch_webpage()
+                
+                if result is not None:
+                    # Success - return the result
+                    self.logger.info(f"Successfully fetched the webpage after {retry_count} attempts")
+                    print(f"Successfully fetched the webpage after {retry_count} attempts")
+                    return result
+                
+                # Only do exponential backoff if we're not on the last attempt or last URL variation
+                if attempt < max_retries - 1 or url_variation != url_variations[-1]:
+                    wait_time = backoff_factor ** attempt
+                    self.logger.debug(f"Retrying in {wait_time:.1f} seconds...")
+                    print(f"Retrying in {wait_time:.1f} seconds...")
+                    time.sleep(wait_time)
+        
+        # All retries failed, restore original URL and return None
+        self.url = original_url
+        self.logger.error(f"Failed to fetch the webpage after {retry_count} attempts")
+        print(f"Failed to fetch the webpage after {retry_count} attempts")
+        return None
+
+
+
     def _fetch_webpage(self):
         """
-        Fetch the webpage content.
+        Fetch the webpage content with improved error handling for undetected_geckodriver.
         
         Returns:
             BeautifulSoup: The parsed HTML content or None on error
         """
-        print("running undetected geckodriver (selenium)")
-        # driver = uc.Chrome(headless=False,use_subprocess=False)
-        options = Options()
-        if self.with_head == False:
-            options.add_argument("--headless")
-        driver = U_Firefox(options=options)
-        self.logger.debug(f"Fetching URL: {self.url}")
-        print(f"Fetching URL: {self.url}")
-        url = self.url
-        driver.get(url)
+        from selenium.common.exceptions import UnexpectedAlertPresentException, TimeoutException, WebDriverException
         
+        print("Running undetected geckodriver (selenium)")
+        options = Options()
+        if not self.with_head:
+            options.add_argument("--headless")
+        
+        driver = None
         try:
-            self.logger.debug("loading the page (20s)")
-            print("loading the page (20s)")
-            # driver.implicitly_wait(20)
-            element = WebDriverWait(driver, 20)
-        finally:
-            if driver.title != None:
-                try:
-                    content = driver.page_source
-                except EC.Alert as a:
-                    print(a)
-                    return None
-                driver.close()
-                return BeautifulSoup(content, "lxml")
-            else:
-                return None
+            self.logger.debug(f"Fetching URL: {self.url}")
+            print(f"Fetching URL: {self.url}")
             
-        #     if response.status_code == 200:
-        #         self.logger.info("URL fetched successfully!")
-        #         return BeautifulSoup(response.text, "html.parser")
-        #     else:
-        #         self.logger.error(f"Failed to fetch the URL: {response.status_code}")
-        #         return None
-        # except requests.exceptions.RequestException as e:
-        #     self.logger.error(f"Error fetching URL: {e}")
-        #     return None
+            # Set up the driver
+            driver = U_Firefox(options=options)
+            
+            # Set page load timeout to prevent hanging indefinitely
+            driver.set_page_load_timeout(30)
+            
+            try:
+                # Attempt to load the page
+                driver.get(self.url)
+                
+                # Wait for the page to load with explicit timeout
+                self.logger.debug("Loading the page (max 20s)")
+                print("Loading the page (max 20s)")
+                
+                try:
+                    # Wait for the page to be in a ready state
+                    WebDriverWait(driver, 20).until(
+                        lambda d: d.execute_script('return document.readyState') == 'complete'
+                    )
+                    
+                    # Check if we've reached an error page
+                    error_check = driver.execute_script(
+                        'return window.location.href.indexOf("about:neterror") === -1'
+                    )
+                    
+                    if not error_check:
+                        error_type = driver.execute_script(
+                            'return new URLSearchParams(window.location.search).get("e")'
+                        )
+                        self.logger.error(f"Browser error page detected: {error_type}")
+                        print(f"Browser error page detected: {error_type}")
+                        driver.close()
+                        return None
+                    
+                    # Successfully loaded the page
+                    content = driver.page_source
+                    driver.close()
+                    return BeautifulSoup(content, "lxml")
+                    
+                except TimeoutException as wait_error:
+                    self.logger.error(f"Timeout waiting for page to load: {wait_error}")
+                    print(f"Timeout waiting for page to load: {wait_error}")
+                    driver.close()
+                    return None
+                except Exception as wait_error:
+                    self.logger.error(f"Error waiting for page to load: {wait_error}")
+                    print(f"Error waiting for page to load: {wait_error}")
+                    driver.close()
+                    return None
+                    
+            except UnexpectedAlertPresentException as alert_error:
+                self.logger.warning(f"Alert detected: {alert_error}")
+                print(f"Alert detected: {alert_error}")
+                
+                try:
+                    # Try to handle the alert
+                    alert = driver.switch_to.alert
+                    alert.dismiss()
+                    content = driver.page_source
+                    driver.close()
+                    return BeautifulSoup(content, "lxml")
+                except:
+                    driver.close()
+                    return None
+                    
+            except WebDriverException as page_error:
+                # Handle various page load errors
+                error_message = str(page_error)
+                
+                if "dnsNotFound" in error_message or "DNS_PROBE_FINISHED_NXDOMAIN" in error_message:
+                    self.logger.error(f"DNS resolution failed for {self.url}")
+                    print(f"DNS resolution failed for {self.url}")
+                elif "ERR_CONNECTION_REFUSED" in error_message or "CONNECTION_REFUSED" in error_message:
+                    self.logger.error(f"Connection refused for {self.url}")
+                    print(f"Connection refused for {self.url}")
+                elif "ERR_CONNECTION_TIMED_OUT" in error_message or "CONNECTION_TIMED_OUT" in error_message:
+                    self.logger.error(f"Connection timed out for {self.url}")
+                    print(f"Connection timed out for {self.url}")
+                elif "ERR_NAME_NOT_RESOLVED" in error_message:
+                    self.logger.error(f"Domain name could not be resolved for {self.url}")
+                    print(f"Domain name could not be resolved for {self.url}")
+                else:
+                    self.logger.error(f"Error loading page: {error_message}")
+                    print(f"Error loading page: {error_message}")
+                
+                driver.close()
+                return None
+                
+        except Exception as driver_error:
+            # Handle driver initialization errors
+            self.logger.error(f"Error initializing browser: {driver_error}")
+            print(f"Error initializing browser: {driver_error}")
+            driver.close()
+            return None
     
     def _extract_js_links(self, soup):
         """
@@ -595,31 +730,36 @@ class LinkExtractor:
                 
             self.logger.debug(f"Read {len(domains)} domains from {filename}")
             
-            
-            for domain in domains:
+            i = 0
+            lenght = len(domains)
+            for i in range(lenght):
                 # Add http:// prefix if not present
-                if not domain.startswith('https://'):
-                    domain = 'https://' + domain
-                
-                self.logger.debug(f"Processing domain: {domain}")
-                
-                
-                # Create a new extractor instance for this domain
-                extractor = LinkExtractor(domain, self.verbose, self.with_head)
-                extractor.run()
-                
-                # Get results
-                result = {
-                    'domain': domain,
-                    'total_domains': len(extractor.domains),
-                    'js_domains': len(extractor.js_domains),
-                    'php_domains': len(extractor.php_domains),
-                    'domains_list': extractor.domains
-                }
-                
-                results.append(result)
-                self.logger.debug(f"Completed processing {domain}")
-                print(f"Completed processing {domain}")
+                domain = domains[i]
+                if domain != '':
+                    if not domain.startswith('https://'):
+                        domain = 'https://' + domain
+                    
+                    self.logger.debug(f"Processing domain: {domain}")
+                    
+                    
+                    # Create a new extractor instance for this domain
+                    extractor = LinkExtractor(domain, self.verbose, self.with_head)
+                    extractor.run()
+                    
+                    # Get results
+                    result = {
+                        'domain': domain,
+                        'total_domains': len(extractor.domains),
+                        'js_domains': len(extractor.js_domains),
+                        'php_domains': len(extractor.php_domains),
+                        'domains_list': extractor.domains
+                    }
+                    
+                    results.append(result)
+                    self.logger.debug(f"Completed processing {domain}")
+                    print(f"Completed processing {domain}")
+                    time.sleep(20)
+                    
             
             return results
         except Exception as e:
@@ -702,17 +842,21 @@ class LinkExtractor:
             conn.close()
     
     def run(self):
-        """Run the link extraction process."""
+        """Run the link extraction process with improved error handling."""
         try:
-            self.console.display_banner(self.verbose)
+            
             
             # Check if URL has already been explored
             if not self._check_if_already_explored():
                 return
             
-            # Fetch the webpage
-            soup = self._fetch_webpage()
+            # Fetch the webpage using the retry mechanism
+            soup = self.fetch_with_retry(max_retries=3, backoff_factor=1.5)
             if not soup:
+                self.logger.error(f"Could not fetch {self.url} after multiple attempts")
+                print(f"Could not fetch {self.url} after multiple attempts")
+                # Mark as explored anyway to avoid repeated failures
+                self._update_explored_domains()
                 return
             
             # Extract and analyze JavaScript links
@@ -745,9 +889,13 @@ class LinkExtractor:
             
             self.logger.debug("All done!")
             print("All done!")
-            sys.exit()
+            
         except Exception as e:
             self.logger.error(f"Error: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            print(f"Error: {str(e)}")
+            print("Check the logs for more details.")
 
 
 def parse_arguments():
@@ -842,7 +990,10 @@ def get_update():
 
 def main():
     """Script entry point."""
+    
     args = parse_arguments()
+    console_utils = ConsoleHelper(args.verbose)
+    console_utils.display_banner(args.verbose)
     
     # Default to URL mode with example.com if no mode specified
     if args.url:
@@ -853,11 +1004,13 @@ def main():
         
         extractor = LinkExtractor(url, args.verbose, args.with_head)
         extractor.run()
+        sys.exit()
     elif args.file:
         # File mode - process multiple domains from a file
         extractor = LinkExtractor("", args.verbose, args.with_head)  # Empty URL as it will be overridden
         results = extractor.process_domains_from_file(args.file)
         print(f"\nProcessed {len(results)} domains from {args.file}")
+        sys.exit()
     elif args.list:
         # List mode - show domains from database
         extractor = LinkExtractor("", args.verbose, args.with_head)  # Empty URL as we're just querying
