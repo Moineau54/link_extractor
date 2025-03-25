@@ -1077,6 +1077,9 @@ def _get_domain(url, extractor):
     elif url.__contains__("https://"):
         _domain = url.replace("https://", "")
     
+    if url.__contains__("www."):
+        _domain = _domain.replace(".www", "")
+    
     _domain = _domain.split("/")[0]
     extractor.domain = _domain
 
