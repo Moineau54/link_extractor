@@ -858,16 +858,20 @@ class LinkExtractor:
             f.write(f"{self.url} {time.strftime('%d.%m.%Y')}\n")
         self.logger.debug(f"Added {self.url} to explored domains")
         
-    def process_domains_from_file(self, filename):
+    def process_domains_from_file(self, filename, verbose, with_head):
         """
         Read domains from a file and process each one.
         
         Args:
             filename (str): Path to the file containing domains (one per line)
+            verbose (boolean)
+            with_head (boolean): checks if it opens a webbrowser window
             
         Returns:
             list: List of results for each domain
         """
+        import requests
+
         results = []
         
         try:
@@ -881,7 +885,8 @@ class LinkExtractor:
             for i in range(lenght):
                 # Add http:// prefix if not present
                 domain = domains[i]
-                _get_domain(url)
+                extractor = LinkExtractor(domain, verbose, with_head)
+                _get_domain(domain, extractor)
                 
                 try:
                     output = subprocess.run(["ping", "-c", "1", self.domain], 
@@ -917,6 +922,40 @@ class LinkExtractor:
                         print(f"{domain} is unreachable")
                 except Exception as e:
                     print(e)
+                    try:
+                        if domain.__contains__("https://"):
+                            response = requests.get(domain)
+                        else:
+                            response = requests.get(f"https://{domain}")
+                        response.raise_for_status()
+                        if response.status_code == 200:
+                            if domain != '':
+                                if not domain.startswith('https://'):
+                                    domain = 'https://' + domain
+                                
+                                self.logger.debug(f"Processing domain: {domain}")
+                                
+                                
+                                # Create a new extractor instance for this domain
+                                extractor = LinkExtractor(domain, self.verbose, self.with_head)
+                                extractor.run()
+                                
+                                # Get results
+                                result = {
+                                    'domain': domain,
+                                    'total_domains': len(extractor.domains),
+                                    'js_domains': len(extractor.js_domains),
+                                    'php_domains': len(extractor.php_domains),
+                                    'domains_list': extractor.domains
+                                }
+                                
+                                results.append(result)
+                                self.logger.debug(f"Completed processing {domain}")
+                                print(f"Completed processing {domain}")
+                                # time.sleep(1)
+                    except Exception as e:
+                        print(e)
+                        print(f"{domain} is unreachable")
             
             return results
         except Exception as e:
@@ -1212,7 +1251,7 @@ def main():
     elif args.file:
         # File mode - process multiple domains from a file
         extractor = LinkExtractor("", args.verbose, args.with_head)  # Empty URL as it will be overridden
-        results = extractor.process_domains_from_file(args.file)
+        results = extractor.process_domains_from_file(args.file, args.verbose, args.with_head)
         print(f"\nProcessed {len(results)} domains from {args.file}")
         sys.exit()
     elif args.list:
