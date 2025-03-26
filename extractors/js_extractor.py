@@ -36,8 +36,9 @@ class JsExtractor:
         domains = []
         
         # Pattern to extract domains from URLs
-        pattern = r'https?:\/\/(?:www\.)?([a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,})'
-        
+        # pattern = r'https?:\/\/(?:www\.)?([a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,})'
+        pattern = r'https?:\/\/(?:[a-zA-Z0-9-]{1,10}\.)?([a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,})'
+
         # Get base domain for comparison
         try:
             base_domain_parts = url.split('.')[1] if len(url.split('.')) > 1 else ''
@@ -52,13 +53,12 @@ class JsExtractor:
             
             # Deduplicate findings
             for item in found_domains:
-                if item not in domains and item not in unique_findings:
+                if item not in domains and item not in unique_findings and item not in exceptions and item.__contains__(base_domain_parts) == False:
                     unique_findings.append(item)
             
             # Filter and add domains
             for domain in unique_findings:
-                if (domain not in domains and 
-                    base_domain_parts not in domain and 
+                if (domain not in domains and domain.__contains__(base_domain_parts) == False and 
                     domain not in exceptions):
                     domains.append(domain)
                     if verbose:
