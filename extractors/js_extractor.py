@@ -22,7 +22,7 @@ class JsExtractor:
     
     def extract_embedded_domains(self, js_code, url, exceptions, verbose=False):
         """
-        Extract domains from JavaScript code using regex.
+        Extract domains from any code using regex.
         
         Args:
             js_code (list): List of JavaScript code strings to analyze
