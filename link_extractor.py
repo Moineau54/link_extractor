@@ -56,7 +56,7 @@ console = Console()
 class LinkExtractor:
     """Main class for extracting links and domains from web pages."""
     
-    def __init__(self, url, verbose=False, with_head=False):
+    def __init__(self, url, verbose=False, with_head=False, screenshot=False, screenshot_dir=False, time=40):
         """
         Initialize the LinkExtractor.
         
@@ -65,8 +65,11 @@ class LinkExtractor:
             verbose (bool): Whether to display verbose output
         """
         self.url = url
+        self.time = time
         self.with_head = with_head
         self.domain = ""
+        self.screenshot = screenshot
+        self.screenshot_dir = screenshot_dir
         self.verbose = verbose
         self.logger = self._setup_logger()
         self.console = ConsoleHelper(verbose)
@@ -398,12 +401,13 @@ class LinkExtractor:
             
             # Keep it simple - avoid undetected_geckodriver which seems to cause issues
             driver = Firefox(options=options)
-            driver.set_page_load_timeout(40)
+            driver.set_page_load_timeout(self.time)
             
             self.logger.debug(f"Navigating to URL: {self.url}")
             print(f"Navigating to URL: {self.url}")
             driver.get(self.url)
-            
+            element_present = EC.presence_of_element_located((By.TAG_NAME, "title"))
+            WebDriverWait(driver, self.time).until(element_present)
             # Wait briefly for page to load
             import time
             time.sleep(5)
@@ -459,6 +463,7 @@ class LinkExtractor:
         """
         import requests
         import time
+        import os
 
         # Try undetected_geckodriver first
         print("Attempting to fetch with undetected_geckodriver...")
@@ -485,16 +490,32 @@ class LinkExtractor:
             if driver is None:
                 raise Exception("Driver initialization returned None")
                 
-            driver.set_page_load_timeout(40)
+            driver.set_page_load_timeout(self.time)
             
             self.logger.debug(f"Navigating to URL: {self.url}")
             print(f"Navigating to URL: {self.url}")
+            driver.set_page_load_timeout(self.time)
             driver.get(self.url)
-            
+            element_present = EC.presence_of_element_located((By.TAG_NAME, "title"))
+            WebDriverWait(driver, self.time).until(element_present)
             # Wait briefly for page to load
-            time.sleep(5)
+            # time.sleep(5)
             
-            # Get page content
+            if self.screenshot == True:
+                # Get page content
+                domain = self._extract_domain_from_url(self.url, self.url)
+                timestamp = time.strftime("%Y%m%d-%H%M%S")
+                filename = f"{domain}_{timestamp}.png"
+                filepath = os.path.join(self.screenshot_dir, filename)
+                
+                # Take the screenshot
+                print(f"Taking screenshot of {self.url}")
+                if not os.path.exists(self.screenshot_dir):
+                    os.makedirs(self.screenshot_dir)
+                print(f"Screenshot saved to {filepath}")
+                # Save the screenshot
+                time.sleep(20) # waits twenty seconds for the page to load completely
+                driver.save_screenshot(filepath)
             content = driver.page_source
             
             # Close driver
@@ -578,7 +599,7 @@ class LinkExtractor:
                     if source:
                         js_links.append(source)
                         domain = self._extract_domain_from_url(source, self.url)
-                        if domain not in self.exceptions and domain not in self.domains:
+                        if domain not in self.exceptions and domain not in self.domains and domain != self.domain:
                             self.domains.append(domain)
 
                 elif ".php" in source:
@@ -587,7 +608,7 @@ class LinkExtractor:
                 else:
                     domain = self._extract_domain_from_url(source, self.url)
                     if domain not in self.exceptions and domain != self.current_site_domain:
-                        if domain not in self.domains and domain not in self.exceptions:
+                        if domain not in self.domains and domain not in self.exceptions and domain != self.domain:
                             self.domains.append(domain)
             else:
                 
@@ -621,7 +642,7 @@ class LinkExtractor:
                         js_links.append(href)
                 else:
                     domain = self._extract_domain_from_url(href, self.url)
-                    if domain not in self.exceptions and domain != self.current_site_domain and domain not in self.domains and domain not in self.exceptions:
+                    if domain not in self.exceptions and domain != self.current_site_domain and domain not in self.domains and domain not in self.exceptions and domain != self.domain:
                         self.domains.append(domain)
             
         
@@ -816,7 +837,7 @@ class LinkExtractor:
         print(f"Found {len(no_script_domains)} domains in the noscript tags")
         
         for domain in no_script_domains:
-            if domain not in self.domains and domain not in self.exceptions:
+            if domain not in self.domains and domain not in self.exceptions and domain != self.domain:
                 self.domains.append(domain)
     
     def _extract_iframe_domains(self, soup):
@@ -837,7 +858,7 @@ class LinkExtractor:
                         self.logger.debug(f"Found domain in iframe: {domain}")
             
             for domain in iframe_domains:
-                if domain not in self.domains and domain not in self.exceptions:
+                if domain not in self.domains and domain not in self.exceptions and domain != self.domain:
                     self.domains.append(domain)
 
     def _extract_head_domains(self, soup):
@@ -853,7 +874,7 @@ class LinkExtractor:
                 print("test")
             domains = self.js_extractor.extract_embedded_domains([head_str], self.url, self.exceptions, self.verbose)
             for domain in domains:
-                if domain not in self.domains and domain not in self.exceptions:
+                if domain not in self.domains and domain not in self.exceptions and domain != self.domain:
                     self.domains.append(domain)
 
     def _extract_script_domains_in_body(self, soup):
@@ -878,7 +899,7 @@ class LinkExtractor:
                             self.logger.debug(f"Found domain in script: {domain}")
             
             for domain in script_domains:
-                if domain not in self.domains and domain not in self.exceptions:
+                if domain not in self.domains and domain not in self.exceptions and domain != self.domain:
                     self.domains.append(domain)
     
     def _save_domains_to_database(self):
@@ -906,11 +927,11 @@ class LinkExtractor:
         # Consolidate all domains and filter out invalid ones
         valid_domains = []
         for domain in self.js_domains:
-            if domain not in self.domains and self._is_valid_domain(domain):
+            if domain not in self.domains and self._is_valid_domain(domain) and domain != self.domain:
                 self.domains.append(domain)
                 
         for domain in self.php_domains:
-            if domain not in self.domains and self._is_valid_domain(domain):
+            if domain not in self.domains and self._is_valid_domain(domain) and domain != self.domain:
                 self.domains.append(domain)
         
         # Filter the final domains list
@@ -960,7 +981,7 @@ class LinkExtractor:
             for i in range(lenght):
                 # Add http:// prefix if not present
                 domain = domains[i]
-                extractor = LinkExtractor(domain, verbose, with_head)
+                extractor = LinkExtractor(url=domain, verbose=verbose, with_head=with_head, screenshot=self.screenshot, screenshot_dir=self.screenshot_dir, time=self.time)
                 domain = _get_domain(domain, extractor)
 
                 try:
@@ -1012,7 +1033,7 @@ class LinkExtractor:
                                 
                                 
                                 # Create a new extractor instance for this domain
-                                extractor = LinkExtractor(domain, self.verbose, self.with_head)
+                                extractor = LinkExtractor(url=domain, verbose=self.verbose, with_head=self.with_head, screenshot=self.screenshot, screenshot_dir=self.screenshot_dir, time=self.time)
                                 extractor.run()
                                 
                                 # Get results
@@ -1196,7 +1217,10 @@ def parse_arguments():
     parser.add_argument("-v", "--verbose", action="store_true", help="Display detailed output")
     parser.add_argument("--asc", action="store_true", help="Sort domains in ascending order (used with --list)")
     parser.add_argument("--desc", action="store_true", help="Sort domains in descending order (used with --list)")
-    
+    parser.add_argument("--screenshot", "-s", action="store_true", help="Take screenshots of websites")
+    parser.add_argument("--screenshot-dir", "-sd", dest="screenshot_dir", default="screenshots", help="Directory to save screenshots (default: screenshots/)")
+    parser.add_argument("--time", "-t", default=40, help="Custom load time")
+
     args = parser.parse_args()
     
     # Default to example URL if no mode specified
@@ -1279,11 +1303,12 @@ def _get_domain(url, extractor):
     extractor.domain = _domain
     return _domain
 
-def main():
+def main(args):
     import requests
+    import os
     """Script entry point."""
     
-    args = parse_arguments()
+    
     console_utils = ConsoleHelper(args.verbose)
     console_utils.display_banner(args.verbose)
     
@@ -1291,7 +1316,17 @@ def main():
     if args.url:
         # URL mode - analyze a single URL
         url = args.url
-        extractor = LinkExtractor(url, args.verbose, args.with_head)
+        if args.screenshot_dir and args.screenshot:
+            screenshot_dir = args.screenshot_dir
+        else:
+            screenshot_dir = f"{os.getcwd()}/screenshots"
+        
+        if args.time:
+            time_variable = int(args.time)
+        
+        extractor = LinkExtractor(url=url, verbose=args.verbose, with_head=args.with_head, screenshot=args.screenshot, screenshot_dir=screenshot_dir, time=time_variable)
+        
+        
         domain = _get_domain(url, extractor)
         try:
             output = subprocess.run(["ping", "-c", "1", domain], 
@@ -1325,13 +1360,21 @@ def main():
         sys.exit()
     elif args.file:
         # File mode - process multiple domains from a file
-        extractor = LinkExtractor("", args.verbose, args.with_head)  # Empty URL as it will be overridden
+        if args.screenshot_dir and args.screenshot:
+            screenshot_dir = args.screenshot_dir
+        elif args.screenshot:
+            screenshot_dir = f"{os.getcwd()}/screenshots"
+
+        if args.time:
+            time_variable = int(args.time)
+        
+        extractor = LinkExtractor("", args.verbose, args.with_head, screenshot=args.screenshot, screenshot_dir=args.screenshot_dir, time=time_variable)  # Empty URL as it will be overridden
         results = extractor.process_domains_from_file(args.file, args.verbose, args.with_head)
         print(f"\nProcessed {len(results)} domains from {args.file}")
         sys.exit()
     elif args.list:
         # List mode - show domains from database
-        extractor = LinkExtractor("", args.verbose, args.with_head)  # Empty URL as we're just querying
+        extractor = LinkExtractor("", args.verbose, args.with_head, screenshot=args.screenshot, screenshot_dir=args.screenshot_dir)  # Empty URL as we're just querying
         
         # Create database connection
         conn = extractor.db.create_connection("domains.db")
@@ -1358,5 +1401,6 @@ def main():
 
 
 if __name__ == "__main__":
+    args = parse_arguments()
     get_update()
-    main()
+    main(args)
