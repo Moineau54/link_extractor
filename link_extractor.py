@@ -1290,13 +1290,13 @@ def get_update():
         console.print(Padding(f"[bold red]→ Couldn't update from GitHub. debug: {e}[/bold red]", (0, 0, 0, 4)))
 
 def _get_domain(url, extractor):
-    _domain = ""
-    if url.__contains__("http://"):
+    _domain = url
+    if _domain.__contains__("http://"):
         _domain = url.replace("http://", "")
-    elif url.__contains__("https://"):
+    elif _domain.__contains__("https://"):
         _domain = url.replace("https://", "")
     
-    if url.__contains__("www."):
+    if _domain.__contains__("www."):
         _domain = _domain.replace("www.", "")
     
     _domain = _domain.split("/")[0]
