@@ -35,7 +35,7 @@ class ConsoleHelper:
         self.verbose = verbose
         self.logger = logging.getLogger('link_extractor.console')
         self.app_name = "Link Extractor"
-        self.version = "2.2.3"
+        self.version = "2.2.4"
     
     def display_banner(self, verbose=False):
         """

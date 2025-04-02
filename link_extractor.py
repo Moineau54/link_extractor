@@ -1299,7 +1299,7 @@ def _get_domain(url, extractor):
     if url.__contains__("www."):
         _domain = _domain.replace("www.", "")
     
-    _domain = url.split("/")[0]
+    _domain = _domain.split("/")[0]
     extractor.domain = _domain
     return _domain
 
@@ -1328,6 +1328,7 @@ def main(args):
         
         
         domain = _get_domain(url, extractor)
+        
         try:
             output = subprocess.run(["ping", "-c", "1", domain], 
                             capture_output=True, text=True, check=True)
