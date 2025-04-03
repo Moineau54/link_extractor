@@ -512,10 +512,11 @@ class LinkExtractor:
                 print(f"Taking screenshot of {self.url}")
                 if not os.path.exists(self.screenshot_dir):
                     os.makedirs(self.screenshot_dir)
-                print(f"Screenshot saved to {filepath}")
+                
                 # Save the screenshot
-                time.sleep(20) # waits twenty seconds for the page to load completely
+                # time.sleep(20) # waits twenty seconds for the page to load completely
                 driver.save_screenshot(filepath)
+                print(f"Screenshot saved to {filepath}")
             content = driver.page_source
             
             # Close driver
@@ -981,8 +982,12 @@ class LinkExtractor:
             for i in range(lenght):
                 # Add http:// prefix if not present
                 domain = domains[i]
-                extractor = LinkExtractor(url=domain, verbose=verbose, with_head=with_head, screenshot=self.screenshot, screenshot_dir=self.screenshot_dir, time=self.time)
-                domain = _get_domain(domain, extractor)
+
+                self.url = domain
+
+                
+                domain = self._get_domain(domain)
+                
 
                 try:
                     output = subprocess.run(["ping", "-c", "1", domain], 
@@ -999,15 +1004,15 @@ class LinkExtractor:
                             
                             # Create a new extractor instance for this domain
                             
-                            extractor.run()
+                            self.run()
                             
                             # Get results
                             result = {
                                 'domain': domain,
-                                'total_domains': len(extractor.domains),
-                                'js_domains': len(extractor.js_domains),
-                                'php_domains': len(extractor.php_domains),
-                                'domains_list': extractor.domains
+                                'total_domains': len(self.domains),
+                                'js_domains': len(self.js_domains),
+                                'php_domains': len(self.php_domains),
+                                'domains_list': self.domains
                             }
                             
                             results.append(result)
@@ -1032,17 +1037,16 @@ class LinkExtractor:
                                 self.logger.debug(f"Processing domain: {domain}")
                                 
                                 
-                                # Create a new extractor instance for this domain
-                                extractor = LinkExtractor(url=domain, verbose=self.verbose, with_head=self.with_head, screenshot=self.screenshot, screenshot_dir=self.screenshot_dir, time=self.time)
-                                extractor.run()
+                                self.url = domain
+                                self.run()
                                 
                                 # Get results
                                 result = {
                                     'domain': domain,
-                                    'total_domains': len(extractor.domains),
-                                    'js_domains': len(extractor.js_domains),
-                                    'php_domains': len(extractor.php_domains),
-                                    'domains_list': extractor.domains
+                                    'total_domains': len(self.domains),
+                                    'js_domains': len(self.js_domains),
+                                    'php_domains': len(self.php_domains),
+                                    'domains_list': self.domains
                                 }
                                 
                                 results.append(result)
@@ -1133,6 +1137,21 @@ class LinkExtractor:
         finally:
             conn.close()
     
+    def _get_domain(self, url):
+        _domain = url
+        if _domain.__contains__("http://"):
+            _domain = url.replace("http://", "")
+        elif _domain.__contains__("https://"):
+            _domain = url.replace("https://", "")
+        
+        if _domain.__contains__("www."):
+            _domain = _domain.replace("www.", "")
+        
+        _domain = _domain.split("/")[0]
+        self.domain = _domain
+        return _domain
+    
+
     def run(self):
         """Run the link extraction process with improved debug handling."""
         try:
@@ -1289,19 +1308,7 @@ def get_update():
         console.print("")
         console.print(Padding(f"[bold red]→ Couldn't update from GitHub. debug: {e}[/bold red]", (0, 0, 0, 4)))
 
-def _get_domain(url, extractor):
-    _domain = url
-    if _domain.__contains__("http://"):
-        _domain = url.replace("http://", "")
-    elif _domain.__contains__("https://"):
-        _domain = url.replace("https://", "")
-    
-    if _domain.__contains__("www."):
-        _domain = _domain.replace("www.", "")
-    
-    _domain = _domain.split("/")[0]
-    extractor.domain = _domain
-    return _domain
+
 
 def main(args):
     import requests
@@ -1327,7 +1334,7 @@ def main(args):
         extractor = LinkExtractor(url=url, verbose=args.verbose, with_head=args.with_head, screenshot=args.screenshot, screenshot_dir=screenshot_dir, time=time_variable)
         
         
-        domain = _get_domain(url, extractor)
+        domain = extractor._get_domain(url)
         
         try:
             output = subprocess.run(["ping", "-c", "1", domain], 
