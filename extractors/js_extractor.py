@@ -121,7 +121,7 @@ class JsExtractor:
                 self.logger.debug(f"Downloading JS from: {target_url}")
             
             # Send the request
-            response = requests.get(target_url, headers=headers)
+            response = requests.get(target_url, headers=headers, timeout=20)
             
             if response.status_code == 200:
                 js_code.append(response.text)
