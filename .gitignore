@@ -10,3 +10,4 @@ logs/*
 test.py
 screenshots/*
 __pycache__/*
+.stfolder/*
