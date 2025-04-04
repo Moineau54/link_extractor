@@ -9,3 +9,4 @@ exceptions.txt
 logs/*
 test.py
 screenshots/*
+__pycache__/*

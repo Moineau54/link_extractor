@@ -32,6 +32,7 @@ import sys
 import os
 import shutil
 import time
+import requests
 import re
 from urllib.parse import urlparse
 import argparse
@@ -145,7 +146,9 @@ class LinkExtractor:
             bool: True if the URL should be explored, False otherwise
         """
         current_date = time.strftime('%d.%m.%Y')
-        
+        # reverse the order of the list
+        self.explored_domains.reverse()
+
         for domain_entry in self.explored_domains:
             if not domain_entry:
                 continue
@@ -156,34 +159,18 @@ class LinkExtractor:
                 
             domain_url, domain_date = parts[0], parts[1]
             
-            if domain_url == self.url:
+            
+            if domain_url.__contains__(self.url):
+                # If the URL is found in the explored_domains list, check if it's the same date
                 if domain_date == current_date:
                     self.logger.debug(f"{self.url} has already been explored today. Exiting...")
                     print(f"{self.url} has already been explored today. Exiting...")
                     return False
                 else:
-                    # Try to calculate days difference
-                    try:
-                        # Convert string dates to integers for comparison
-                        domain_day, domain_month, domain_year = map(int, domain_date.split('.'))
-                        current_day, current_month, current_year = map(int, current_date.split('.'))
-                        
-                        # Simple check - if it's more than a month ago, re-explore
-                        if (domain_year < current_year or 
-                            (domain_year == current_year and domain_month < current_month - 1) or
-                            (domain_year == current_year and domain_month == current_month - 1 and domain_day < current_day)):
-                            self.logger.debug(f"{self.url} has not been explored in the last 30 days. Re-exploring...")
-                            print(f"{self.url} has not been explored in the last 30 days. Re-exploring...")
-                            return True
-                        else:
-                            self.logger.debug(f"{self.url} has been explored within the last 30 days. Exiting...")
-                            print(f"{self.url} has been explored within the last 30 days. Exiting...")
-                            return False
-                    except ValueError:
-                        # If date parsing fails, re-explore to be safe
-                        self.logger.debug("Couldn't determine exploration age. Re-exploring...")
-                        print("Couldn't determine exploration age. Re-exploring...")
-                        return True
+                    # Re-explore if the date is different
+                    self.logger.debug(f"{self.url} has not been explored today. Re-exploring...")
+                    print(f"{self.url} has not been explored today. Re-exploring...")
+                    return True
         
         # If URL not found in explored_domains, explore it
         return True
@@ -319,7 +306,11 @@ class LinkExtractor:
                             # If ping failed or domain was empty, try with requests directly
                             try:
                                 # Add SSL verification disable for sites with bad certificates
-                                response = requests.get(self.url, verify=False)
+                                if not self.url.startswith('https://') and not self.url.startswith('http://'):
+                                    response = requests.get(f"https://{self.url}", verify=False)
+                                else:
+                                    response = requests.get(self.url, verify=False)
+
                                 if response.status_code == 200:
                                     retry_count += 1
                                     
@@ -371,7 +362,11 @@ class LinkExtractor:
                 'Upgrade-Insecure-Requests': '1',
             }
             
-            response = requests.get(self.url, headers=headers, verify=False, timeout=30)
+            if not self.url.startswith('https://') and not self.url.startswith('http://'):
+
+                response = requests.get(f"https://{self.url}", headers=headers, verify=False, timeout=30)
+            else:
+                response = requests.get(self.url, headers=headers, verify=False, timeout=30)
             
             if response.status_code == 200:
                 self.logger.debug("Successfully fetched webpage with requests")
@@ -439,13 +434,23 @@ class LinkExtractor:
             try:
                 self.logger.debug("Final attempt with requests")
                 print("Final attempt with requests")
-                response = requests.get(
-                    self.url, 
-                    verify=False, 
-                    timeout=30,
-                    headers={'User-Agent': 'Mozilla/5.0'},
-                    allow_redirects=True
-                )
+                if not self.url.startswith('https://') and not self.url.startswith('http://'):
+                    response = requests.get(
+                        f"https://{self.url}", 
+                        verify=False, 
+                        timeout=30,
+                        headers={'User-Agent': 'Mozilla/5.0'},
+                        allow_redirects=True
+                    )
+                else:
+                    response = requests.get(
+                        self.url, 
+                        verify=False, 
+                        timeout=30,
+                        headers={'User-Agent': 'Mozilla/5.0'},
+                        allow_redirects=True
+                    )
+                
                 if response.status_code == 200:
                     return BeautifulSoup(response.text, "lxml")
             except Exception as final_error:
@@ -552,14 +557,23 @@ class LinkExtractor:
                     'Upgrade-Insecure-Requests': '1',
                 }
                 
-                response = requests.get(
-                    self.url, 
-                    headers=headers,
-                    verify=False, 
-                    timeout=30,
-                    allow_redirects=True
-                )
-                
+                if not self.url.startswith('https://') and not self.url.startswith('http://'):
+                    response = requests.get(
+                        f"https://{self.url}", 
+                        headers=headers,
+                        verify=False, 
+                        timeout=30,
+                        allow_redirects=True
+                    )
+                else:
+                    response = requests.get(
+                        self.url, 
+                        headers=headers,
+                        verify=False, 
+                        timeout=30,
+                        allow_redirects=True
+                    )
+                    
                 if response.status_code == 200:
                     self.logger.debug("Successfully fetched webpage with requests")
                     print("Successfully fetched webpage with requests")
@@ -1203,7 +1217,6 @@ class LinkExtractor:
             print(f"Total unique domains found: {len(self.domains)}")
             for domain in self.domains:
                 if domain != '':
-                    self.logger.debug(f"Found domain: {domain}")
                     print(f"Found domain: {domain}")
             
             self.logger.debug("All done!")
@@ -1322,7 +1335,14 @@ def main(args):
     # Default to URL mode with example.com if no mode specified
     if args.url:
         # URL mode - analyze a single URL
-        url = args.url
+        
+        if args.url.startswith("http://") or args.url.startswith("https://"):
+            url = args.url
+        else:
+            url = "https://" + args.url
+        if args.url.endswith("/"):
+            url = args.url[:-1]
+
         if args.screenshot_dir and args.screenshot:
             screenshot_dir = args.screenshot_dir
         else:
@@ -1347,19 +1367,26 @@ def main(args):
             else:
                 print(f"{url} is unreachable.")
         except Exception as e:
-            response = requests.get(url, verify=False)
-            response.raise_for_status()
-            if response.status_code != 200:
-                print(e)
-                return
-            
-            if not url.startswith('https://'):
+            if not url.startswith('https://') and not url.startswith('http://'):
                 url = 'https://' + url
+            
+            try:
+                response = requests.get(url, verify=False)
+                response.raise_for_status()
+                if response.status_code != 200:
+                    print(e)
+                    return
+                
+                if not url.startswith('https://'):
+                    url = 'https://' + url
 
-            if response.status_code == 200:
-                extractor.run()
-            else:
-                print(f"{url} isn't reachable.")
+                if response.status_code == 200:
+                    extractor.run()
+                else:
+                    print(f"{url} is unreachable.")
+            except Exception as e:
+                print(e)
+                print(f"{url} is unreachable.")
         
         
         
